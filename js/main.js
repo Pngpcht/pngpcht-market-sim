@@ -11,25 +11,24 @@
   const START_PRICE = 100;
   const START_BALANCE = 10000;
 
+  const WARMUP_TICKS = 2 * 86400; // market history built before you arrive: 2 days
+
   const market = new Market({ startPrice: START_PRICE });
   market.addAccount(ME, { cash: START_BALANCE, asset: 0 });
-  seedBook();
+  const crowd = Bots.createBots(market);
+
+  // One second of market time: the clock moves, then every bot may act.
+  function step() {
+    market.tick();
+    crowd.step();
+  }
+  for (let i = 0; i < WARMUP_TICKS; i++) step();
 
   const chart = new CandleChart($('chart'));
   const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 600]; // slider stops
   let speed = 60;      // ticks (market seconds) per real second
   let paused = false;
   let timeframe = 60;  // candle size in seconds
-
-  // Temporary: resting orders on both sides so trades can fill.
-  // Replaced by the bots.
-  function seedBook() {
-    market.addAccount('seed', { cash: 1e7, asset: 1e5 });
-    for (let i = 1; i <= 60; i++) {
-      market.placeLimit('seed', 'sell', START_PRICE + i * 0.05, 2);
-      market.placeLimit('seed', 'buy', START_PRICE - i * 0.05, 2);
-    }
-  }
 
   /* ---------------- formatting ---------------- */
 
@@ -87,7 +86,7 @@
     const id = e.target.dataset.cancel;
     if (id) market.cancel(Number(id));
   });
-  $('limit-price').value = price(START_PRICE);
+  $('limit-price').value = price(market.lastPrice);
 
   /* ---------------- left panel ---------------- */
 
@@ -188,7 +187,7 @@
     pending = paused ? 0 : pending + dt * speed;
     const ticks = Math.floor(pending);
     pending -= ticks;
-    for (let i = 0; i < ticks; i++) market.tick();
+    for (let i = 0; i < ticks; i++) step();
 
     chart.setData(market.candles.get(timeframe), timeframe);
     chart.render();

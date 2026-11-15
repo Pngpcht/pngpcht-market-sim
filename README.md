@@ -18,6 +18,20 @@ Open `index.html` in a browser.
 - One tick is one second of market time. Trades are grouped into 1-minute
   candles, and the bigger timeframes merge those same candles.
 - You start with a fake balance of 10,000. No fees, no shorting.
+- The market opens with two days of history that the bots traded among
+  themselves before you arrived.
+
+## The bots
+
+Every bot has its own account and places real orders through the same order
+book as you, under the same rules (`js/bots.js`). None of them can set the price.
+
+| Bot | What it does |
+| --- | --- |
+| Random (30) | Buys or sells at random, 1 to 2 percent of its balance each time. Half hit the market, half wait as limit orders near the price. |
+| Trend follower (4) | Fast SMA above slow SMA means buy, below means sell. |
+| High frequency trader (2) | Keeps a buy just below the price and a sell just above, and moves them as the price moves. |
+| Whale (1) | Almost always idle, then one huge market order, 10 to 50 times the normal size. |
 
 ## Tests
 
@@ -25,7 +39,7 @@ Open `index.html` in a browser.
 npm test
 ```
 
-Runs the engine tests with Node's built-in test runner. Nothing to install.
+Runs the engine, indicator and bot tests with Node's built-in test runner. Nothing to install.
 
 ## Controls
 
