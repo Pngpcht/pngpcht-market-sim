@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Sim</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- Left panel: time, timeframe, drawing tools, indicators -->
+    <aside class="panel left">
+      <h1 class="brand">Market Sim</h1>
+      <fieldset id="left-controls" disabled>
+
+        <section>
+          <h2>Time speed</h2>
+          <div class="row spread">
+            <button type="button" id="pause-btn" class="btn">Pause</button>
+            <output id="speed-label" class="value">60×</output>
+          </div>
+          <input type="range" id="speed" min="0" max="8" step="1" value="5" aria-label="Time speed">
+          <p class="hint">1 tick = 1 second of market time</p>
+        </section>
+
+        <section>
+          <h2>Timeframe</h2>
+          <div class="seg" id="timeframes">
+            <button type="button" class="btn active" data-tf="60">1m</button>
+            <button type="button" class="btn" data-tf="300">5m</button>
+            <button type="button" class="btn" data-tf="900">15m</button>
+            <button type="button" class="btn" data-tf="1800">30m</button>
+            <button type="button" class="btn" data-tf="3600">1h</button>
+            <button type="button" class="btn" data-tf="14400">4h</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Drawing tools</h2>
+          <div class="tools" id="tools">
+            <button type="button" class="btn tool active" data-tool="cursor">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2l9 5-4 1.5L6.5 13z"/></svg>
+              Cursor
+            </button>
+            <button type="button" class="btn tool" data-tool="trendline">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13L13.5 3"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="13.5" cy="3" r="1.5"/></svg>
+              Trendline
+            </button>
+            <button type="button" class="btn tool" data-tool="hline">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8h14"/><circle cx="8" cy="8" r="1.5"/></svg>
+              Horizontal line
+            </button>
+            <button type="button" class="btn tool" data-tool="rect">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="4" width="12" height="8"/></svg>
+              Rectangle
+            </button>
+            <button type="button" class="btn tool" data-tool="fib">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12M2 6.5h12M2 9h12M2 13h12"/></svg>
+              Fib retracement
+            </button>
+          </div>
+          <div class="row">
+            <button type="button" id="undo-drawing" class="btn small">Undo</button>
+            <button type="button" id="clear-drawings" class="btn small">Clear all</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Indicators</h2>
+          <label class="indicator">
+            <input type="checkbox" id="sma-on">
+            <span class="swatch sma"></span>
+            <span class="name">SMA</span>
+            <input type="number" id="sma-period" value="20" min="2" max="500" aria-label="SMA period">
+          </label>
+          <label class="indicator">
+            <input type="checkbox" id="ema-on">
+            <span class="swatch ema"></span>
+            <span class="name">EMA</span>
+            <input type="number" id="ema-period" value="50" min="2" max="500" aria-label="EMA period">
+          </label>
+        </section>
+
+      </fieldset>
+    </aside>
+
+    <!-- Middle panel: candle chart (step 2) -->
+    <main class="panel middle"></main>
+
+    <!-- Right panel: orders, trade history, balance (step 2) -->
+    <aside class="panel right"></aside>
+
+  </div>
+</body>
+</html>
