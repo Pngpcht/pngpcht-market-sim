@@ -29,6 +29,19 @@
     return isOpen(t) ? t : t - (t % WEEK) + WEEK_OPEN;
   }
 
+  // The trading session at market time `t` (GMT):
+  //   asia     22:00 to 07:00  thin and quiet
+  //   london   07:00 to 13:00
+  //   overlap  13:00 to 17:00  London and New York together, the busiest
+  //   newyork  17:00 to 22:00
+  function session(t) {
+    const hour = (t % DAY) / HOUR;
+    if (hour >= 22 || hour < 7) return 'asia';
+    if (hour < 13) return 'london';
+    if (hour < 17) return 'overlap';
+    return 'newyork';
+  }
+
   const pad2 = (n) => String(n).padStart(2, '0');
 
   function dayName(t) {
@@ -41,5 +54,5 @@
     return withSeconds ? text + ':' + pad2(Math.floor(t % 60)) : text;
   }
 
-  return { HOUR, DAY, WEEK, WEEK_CLOSE, WEEK_OPEN, isOpen, nextOpen, dayName, format };
+  return { HOUR, DAY, WEEK, WEEK_CLOSE, WEEK_OPEN, isOpen, nextOpen, session, dayName, format };
 });
