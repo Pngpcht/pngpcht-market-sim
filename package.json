@@ -1,0 +1,8 @@
+{
+  "name": "market-sim",
+  "private": true,
+  "description": "Order-book market simulation in plain HTML and JS",
+  "scripts": {
+    "test": "node --test"
+  }
+}

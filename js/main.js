@@ -1,0 +1,157 @@
+/*
+ * Wires the engine, the chart and the panels together.
+ */
+(function () {
+  'use strict';
+
+  const { Market } = MarketEngine;
+  const $ = (id) => document.getElementById(id);
+
+  const ME = 'you';
+  const START_PRICE = 100;
+  const START_BALANCE = 10000;
+
+  const market = new Market({ startPrice: START_PRICE });
+  market.addAccount(ME, { cash: START_BALANCE, asset: 0 });
+  seedBook();
+
+  const chart = new CandleChart($('chart'));
+  let speed = 60;      // ticks (market seconds) per real second
+  let timeframe = 60;  // candle size in seconds
+
+  // Temporary: resting orders on both sides so trades can fill.
+  // Replaced by the bots.
+  function seedBook() {
+    market.addAccount('seed', { cash: 1e7, asset: 1e5 });
+    for (let i = 1; i <= 60; i++) {
+      market.placeLimit('seed', 'sell', START_PRICE + i * 0.05, 2);
+      market.placeLimit('seed', 'buy', START_PRICE - i * 0.05, 2);
+    }
+  }
+
+  /* ---------------- formatting ---------------- */
+
+  const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+  const price = (p) => p.toFixed(2);
+  const amount = (q) => q.toFixed(4);
+
+  /* ---------------- my trades ---------------- */
+
+  const myTrades = [];
+  let tradesDirty = true;
+
+  market.onTrade = (t) => {
+    if (t.buyer !== ME && t.seller !== ME) return;
+    myTrades.unshift({ time: t.time, side: t.buyer === ME ? 'buy' : 'sell', price: t.price, qty: t.qty });
+    if (myTrades.length > 200) myTrades.pop();
+    tradesDirty = true;
+  };
+
+  /* ---------------- orders ---------------- */
+
+  function say(text, isError) {
+    const el = $('order-msg');
+    el.textContent = text;
+    el.classList.toggle('error', !!isError);
+  }
+
+  function describeFills(side, result) {
+    const cost = result.fills.reduce((sum, f) => sum + f.price * f.qty, 0);
+    return (side === 'buy' ? 'Bought ' : 'Sold ') + amount(result.filled) + ' at ' + price(cost / result.filled) + ' average';
+  }
+
+  function submitMarket(side) {
+    const qty = parseFloat($('market-qty').value);
+    const result = market.placeMarket(ME, side, qty);
+    if (!result.ok) return say(result.error, true);
+    const short = result.filled < qty - 1e-9 ? ' (partly filled)' : '';
+    say(describeFills(side, result) + short);
+  }
+
+  function submitLimit(side) {
+    const result = market.placeLimit(ME, side, parseFloat($('limit-price').value), parseFloat($('limit-qty').value));
+    if (!result.ok) return say(result.error, true);
+    const parts = [];
+    if (result.filled > 0) parts.push(describeFills(side, result));
+    if (result.order) parts.push('Limit ' + side + ' waiting at ' + price(result.order.price));
+    say(parts.join('. '));
+  }
+
+  $('market-buy').addEventListener('click', () => submitMarket('buy'));
+  $('market-sell').addEventListener('click', () => submitMarket('sell'));
+  $('limit-buy').addEventListener('click', () => submitLimit('buy'));
+  $('limit-sell').addEventListener('click', () => submitLimit('sell'));
+  $('open-orders').addEventListener('click', (e) => {
+    const id = e.target.dataset.cancel;
+    if (id) market.cancel(Number(id));
+  });
+  $('limit-price').value = price(START_PRICE);
+
+  /* ---------------- rendering the right panel ---------------- */
+
+  const shown = {};
+  function setText(id, text) {
+    if (shown[id] === text) return;
+    shown[id] = text;
+    $(id).textContent = text;
+  }
+
+  function renderBalance() {
+    const me = market.account(ME);
+    setText('cash', usd.format(me.cash));
+    setText('holdings', amount(me.asset) + ' SIM');
+    setText('equity', 'Total ' + usd.format(me.cash + me.asset * market.lastPrice));
+    const bid = market.bestBid(), ask = market.bestAsk();
+    setText('bid', bid === null ? '–' : price(bid));
+    setText('ask', ask === null ? '–' : price(ask));
+  }
+
+  let ordersKey = null;
+  function renderOpenOrders() {
+    const orders = market.openOrders(ME).sort((a, b) => b.price - a.price);
+    const key = orders.map((o) => o.id + ':' + o.remaining).join(',');
+    if (key === ordersKey) return;
+    ordersKey = key;
+    chart.orderLines = orders.map((o) => ({ price: o.price, side: o.side, label: (o.side === 'buy' ? 'Buy ' : 'Sell ') + amount(o.remaining) }));
+    $('open-orders').innerHTML = orders.length
+      ? orders.map((o) =>
+          '<div class="tr"><span class="' + o.side + '">' + (o.side === 'buy' ? 'Buy' : 'Sell') + '</span>' +
+          '<span>' + price(o.price) + '</span><span>' + amount(o.remaining) + '</span>' +
+          '<button type="button" class="cancel" data-cancel="' + o.id + '" title="Cancel order" aria-label="Cancel order">✕</button></div>').join('')
+      : '<p class="empty">No open orders</p>';
+  }
+
+  function renderTrades() {
+    if (!tradesDirty) return;
+    tradesDirty = false;
+    $('trades').innerHTML = myTrades.length
+      ? myTrades.map((t) =>
+          '<div class="tr"><span>' + CandleChart.formatTime(t.time, true) + '</span>' +
+          '<span class="' + t.side + '">' + (t.side === 'buy' ? 'Buy' : 'Sell') + '</span>' +
+          '<span>' + price(t.price) + '</span><span>' + amount(t.qty) + '</span></div>').join('')
+      : '<p class="empty">No trades yet</p>';
+  }
+
+  /* ---------------- main loop ---------------- */
+
+  let lastFrame = performance.now();
+  let pending = 0; // fractional ticks carried between frames
+
+  function frame(now) {
+    const dt = Math.min(1, (now - lastFrame) / 1000); // a slow frame still advances the market
+    lastFrame = now;
+    pending += dt * speed;
+    const ticks = Math.floor(pending);
+    pending -= ticks;
+    for (let i = 0; i < ticks; i++) market.tick();
+
+    chart.setData(market.candles.get(timeframe), timeframe);
+    chart.render();
+    renderBalance();
+    renderOpenOrders();
+    renderTrades();
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();

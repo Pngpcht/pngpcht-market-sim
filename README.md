@@ -8,3 +8,21 @@ Plain HTML and JavaScript, a canvas candle chart, no backend and no dependencies
 ## Run
 
 Open `index.html` in a browser.
+
+## How it works
+
+- `js/engine.js` is the market: a limit order book with price-time priority.
+  Makers rest limit orders, takers hit them, and the price is simply the last
+  traded price. Your Buy eats the cheapest sell orders and raises the price;
+  your Sell does the opposite.
+- One tick is one second of market time. Trades are grouped into 1-minute
+  candles, and the bigger timeframes merge those same candles.
+- You start with a fake balance of 10,000. No fees, no shorting.
+
+## Tests
+
+```
+npm test
+```
+
+Runs the engine tests with Node's built-in test runner. Nothing to install.
