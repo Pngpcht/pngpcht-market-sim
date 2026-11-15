@@ -296,6 +296,8 @@ input[type="number"] {
 .tr .sell { color: var(--down); }
 
 .position .btn { flex: none; }
+.position .rows { margin-bottom: 10px; }
+.position .hint { margin-top: 0; }
 .position .tr { grid-template-columns: 1.3fr 1fr 1fr; }
 .position .tr span:nth-child(2) { color: var(--muted); }
 

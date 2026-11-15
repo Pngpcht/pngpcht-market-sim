@@ -146,6 +146,13 @@
           <div class="tr" id="position-row" hidden><span id="pos-side"></span><span id="pos-entry"></span><span id="pos-pnl"></span></div>
           <p class="empty" id="no-position">No position</p>
         </div>
+        <label class="field">Stop loss
+          <input type="number" id="sl" step="0.01" min="0" placeholder="none" inputmode="decimal">
+        </label>
+        <label class="field">Take profit
+          <input type="number" id="tp" step="0.01" min="0" placeholder="none" inputmode="decimal">
+        </label>
+        <p class="hint">Closes your position at the market when the price gets there.</p>
       </section>
 
       <section class="open-orders">

@@ -17,7 +17,12 @@ Open `index.html` in a browser.
   your Sell does the opposite.
 - One tick is one second of market time. Trades are grouped into 1-minute
   candles, and the bigger timeframes merge those same candles.
-- You start with a fake balance of 10,000. No fees, no shorting.
+- You start with a fake balance of 10,000. No fees.
+- Two markets, picked in the left panel. **Stock**: you can only sell what
+  you own. **Forex**: you can sell first and buy back later (a short), until
+  the short is worth as much as your whole account.
+- **Stop loss / take profit**: two prices on your position. When the market
+  trades there, the position is closed with a market order.
 - The market opens with two days of history that the bots traded among
   themselves before you arrived.
 
@@ -39,13 +44,16 @@ book as you, under the same rules (`js/bots.js`). None of them can set the price
 npm test
 ```
 
-Runs the engine, indicator and bot tests with Node's built-in test runner. Nothing to install.
+Runs the engine, position, indicator and bot tests with Node's built-in test runner. Nothing to install.
 
 ## Controls
 
+- **Market**: Stock or Forex (Forex lets you sell without buying first).
 - **Time speed**: how many ticks run per real second (1× to 600×), plus Pause.
 - **Timeframe**: 1m, 5m, 15m, 30m, 1h, 4h.
 - **Chart**: drag to pan, scroll to zoom, double-click to jump back to the latest candle.
 - **Drawing tools**: pick a tool, then drag on the chart (or click once for each end).
   Click a drawing and press Delete to remove it. Escape cancels.
 - **Indicators**: SMA and EMA with your own period.
+- **Stop loss / Take profit** (right panel): fill them in before you place an
+  order, or edit them while a position is open. Empty means none.

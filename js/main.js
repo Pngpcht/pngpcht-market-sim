@@ -17,12 +17,10 @@
   market.addAccount(ME, { cash: START_BALANCE, asset: 0 });
   const crowd = Bots.createBots(market);
 
-  // One second of market time: the clock moves, then every bot may act.
-  function step() {
+  for (let i = 0; i < WARMUP_TICKS; i++) {
     market.tick();
     crowd.step();
   }
-  for (let i = 0; i < WARMUP_TICKS; i++) step();
 
   const chart = new CandleChart($('chart'));
   const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 600]; // slider stops
@@ -32,6 +30,9 @@
   let mode = 'stock';  // 'stock': sell only what you own. 'forex': you may sell first (short).
   let entry = 0;       // average price I got into my position at
   const isOpen = (qty) => Math.abs(qty) > Position.FLAT;
+  let levels = { sl: null, tp: null }; // stop loss and take profit of my position
+  let low = market.lastPrice;          // lowest and highest trade since the levels were last checked
+  let high = market.lastPrice;
 
   /* ---------------- formatting ---------------- */
 
@@ -45,6 +46,8 @@
   let tradesDirty = true;
 
   market.onTrade = (t) => {
+    if (t.price < low) low = t.price;
+    if (t.price > high) high = t.price;
     if (t.buyer !== ME && t.seller !== ME) return;
     const side = t.buyer === ME ? 'buy' : 'sell';
     const after = market.account(ME).asset;
@@ -67,17 +70,96 @@
     return (side === 'buy' ? 'Bought ' : 'Sold ') + amount(result.filled) + ' at ' + price(cost / result.filled) + ' average';
   }
 
+  /* ---------------- stop loss / take profit ---------------- */
+
+  // The two inputs as prices, null when left empty.
+  function readLevels() {
+    const read = (id) => {
+      const text = $(id).value.trim();
+      if (text === '') return null;
+      const value = Math.round(parseFloat(text) * 100) / 100;
+      return value > 0 ? value : NaN;
+    };
+    const typed = { sl: read('sl'), tp: read('tp') };
+    if (Number.isNaN(typed.sl) || Number.isNaN(typed.tp)) return { error: 'Stop loss and take profit must be prices above zero' };
+    return typed;
+  }
+
+  function showLevels() {
+    $('sl').value = levels.sl === null ? '' : price(levels.sl);
+    $('tp').value = levels.tp === null ? '' : price(levels.tp);
+  }
+
+  // The typed levels, checked against the position this order would leave me with.
+  function levelsForOrder(side, refPrice, qty) {
+    const typed = readLevels();
+    if (typed.error) return typed;
+    const after = market.account(ME).asset + (side === 'buy' ? qty : -qty);
+    if (isOpen(after)) {
+      const error = Position.checkLevels(after, refPrice, typed.sl, typed.tp);
+      if (error) return { error };
+    }
+    return typed;
+  }
+
+  // Editing the inputs while a position is open moves its levels.
+  function updateLevels() {
+    const qty = market.account(ME).asset;
+    if (!isOpen(qty)) return; // read when the next order is placed
+    const typed = readLevels();
+    const error = typed.error || Position.checkLevels(qty, market.lastPrice, typed.sl, typed.tp);
+    if (error) {
+      showLevels(); // back to the levels that are active
+      return say(error, true);
+    }
+    levels = typed;
+    showLevels();
+    say('Stop loss and take profit updated');
+  }
+  $('sl').addEventListener('change', updateLevels);
+  $('tp').addEventListener('change', updateLevels);
+
+  // Runs after every tick: close the position if the market reached a level.
+  function protect() {
+    const qty = market.account(ME).asset;
+    if (isOpen(qty)) {
+      const hit = Position.levelHit(qty, levels.sl, levels.tp, low, high);
+      if (hit) closePosition(hit === 'sl' ? 'Stop loss hit' : 'Take profit hit');
+      // A short that has eaten almost the whole account is closed before it can go below zero.
+      else if (qty < 0 && market.equity(ME) < -qty * market.lastPrice * 0.05) closePosition('Margin call, short closed');
+    }
+    low = high = market.lastPrice;
+  }
+
+  /* ---------------- placing orders ---------------- */
+
   function submitMarket(side) {
     const qty = parseFloat($('market-qty').value);
+    const typed = levelsForOrder(side, market.lastPrice, qty);
+    if (typed.error) return say(typed.error, true);
+    const previous = levels;
+    levels = typed;
     const result = market.placeMarket(ME, side, qty);
-    if (!result.ok) return say(result.error, true);
+    if (!result.ok) {
+      levels = previous;
+      return say(result.error, true);
+    }
     const short = result.filled < qty - 1e-9 ? ' (partly filled)' : '';
     say(describeFills(side, result) + short);
   }
 
   function submitLimit(side) {
-    const result = market.placeLimit(ME, side, parseFloat($('limit-price').value), parseFloat($('limit-qty').value));
-    if (!result.ok) return say(result.error, true);
+    const limit = parseFloat($('limit-price').value);
+    const qty = parseFloat($('limit-qty').value);
+    const typed = levelsForOrder(side, limit, qty);
+    if (typed.error) return say(typed.error, true);
+    const previous = levels;
+    levels = typed;
+    const result = market.placeLimit(ME, side, limit, qty);
+    if (!result.ok) {
+      levels = previous;
+      return say(result.error, true);
+    }
     const parts = [];
     if (result.filled > 0) parts.push(describeFills(side, result));
     if (result.order) parts.push('Limit ' + side + ' waiting at ' + price(result.order.price));
@@ -195,9 +277,16 @@
     setText('ask', ask === null ? '–' : price(ask));
   }
 
+  let wasOpen = false;
   function renderPosition() {
     const qty = market.account(ME).asset;
     const open = isOpen(qty);
+    if (wasOpen && !open) {
+      // The position is gone, and its stop loss and take profit go with it.
+      levels = { sl: null, tp: null };
+      showLevels();
+    }
+    wasOpen = open;
     $('position-row').hidden = !open;
     $('close-position').hidden = !open;
     $('no-position').hidden = open;
@@ -214,7 +303,12 @@
   let orderLines = [];
   function renderChartLines() {
     const lines = orderLines.slice();
-    if (isOpen(market.account(ME).asset)) lines.push({ price: entry, label: 'Entry', color: '#9aa7b8' });
+    const open = isOpen(market.account(ME).asset);
+    if (open) lines.push({ price: entry, label: 'Entry', color: '#9aa7b8' });
+    if (open || orderLines.length) {
+      if (levels.sl !== null) lines.push({ price: levels.sl, label: 'Stop loss', side: 'sell' });
+      if (levels.tp !== null) lines.push({ price: levels.tp, label: 'Take profit', side: 'buy' });
+    }
     chart.orderLines = lines;
   }
 
@@ -255,7 +349,13 @@
     pending = paused ? 0 : pending + dt * speed;
     const ticks = Math.floor(pending);
     pending -= ticks;
-    for (let i = 0; i < ticks; i++) step();
+    for (let i = 0; i < ticks; i++) {
+      // One second of market time: the clock moves, every bot may act,
+      // then my stop loss and take profit are checked.
+      market.tick();
+      crowd.step();
+      protect();
+    }
 
     chart.setData(market.candles.get(timeframe), timeframe);
     chart.render();
