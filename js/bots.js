@@ -139,5 +139,5 @@
     };
   }
 
-  return { createBots, RandomBot, TrendBot, HftBot, WhaleBot, NORMAL_ORDER_VALUE };
+  return { createBots, WhaleBot, NORMAL_ORDER_VALUE };
 });

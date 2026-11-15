@@ -309,5 +309,5 @@
     return floorQty(total);
   }
 
-  return { Market, CandleStore, BASE_TF };
+  return { Market };
 });

@@ -73,15 +73,6 @@ h2 {
   margin: 0 0 8px;
 }
 
-fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
-fieldset:disabled { opacity: 0.45; }
-
 section {
   border-top: 1px solid var(--border);
   padding: 14px 0;
@@ -117,8 +108,7 @@ section {
   padding: 6px 10px;
 }
 
-.btn:hover:not(:disabled) { border-color: #3a4556; }
-.btn:disabled { cursor: not-allowed; }
+.btn:hover { border-color: #3a4556; }
 .btn.small { flex: 1; font-size: 12px; padding: 4px 8px; }
 
 .btn.active {
@@ -264,8 +254,8 @@ input[type="number"] {
 
 .btn.buy { background: rgba(38, 166, 154, 0.16); border-color: var(--up); color: #7fe0d6; }
 .btn.sell { background: rgba(239, 83, 80, 0.14); border-color: var(--down); color: #ff9c9a; }
-.btn.buy:hover:not(:disabled) { background: rgba(38, 166, 154, 0.3); border-color: var(--up); }
-.btn.sell:hover:not(:disabled) { background: rgba(239, 83, 80, 0.28); border-color: var(--down); }
+.btn.buy:hover { background: rgba(38, 166, 154, 0.3); border-color: var(--up); }
+.btn.sell:hover { background: rgba(239, 83, 80, 0.28); border-color: var(--down); }
 
 .quote {
   color: var(--muted);
