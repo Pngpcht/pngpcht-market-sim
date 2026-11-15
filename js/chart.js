@@ -61,12 +61,12 @@
     constructor(canvas) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
-      this.title = 'SIM/USD';
+      this.title = '';
       this.candles = [];
       this.tf = 60;
       this.candleW = 8; // pixels per candle
       this.scroll = 0;  // candles the view is shifted back from the latest
-      this.orderLines = []; // [{ price, side, label }]
+      this.orderLines = []; // [{ price, label, side or color }]
       this.indicators = []; // [{ type: 'sma' | 'ema', period }]
       this.drawings = [];   // [{ type, a: { t, p }, b: { t, p } }]
       this.tool = 'cursor';
@@ -448,7 +448,7 @@
       for (const o of this.orderLines) {
         if (o.price < g.min || o.price > g.max) continue;
         const y = Math.round(this.yOfPrice(o.price)) + 0.5;
-        ctx.strokeStyle = ctx.fillStyle = o.side === 'buy' ? C.up : C.down;
+        ctx.strokeStyle = ctx.fillStyle = o.color || (o.side === 'buy' ? C.up : C.down);
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(g.plotW, y); ctx.stroke();
         ctx.fillText(o.label, 8, y - 8);
       }

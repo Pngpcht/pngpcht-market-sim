@@ -19,6 +19,8 @@
   scrollbar-width: thin;
 }
 
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
@@ -138,6 +140,8 @@ input[type="range"] {
 }
 
 .seg .btn { padding: 6px 0; }
+.seg.two { grid-template-columns: repeat(2, 1fr); }
+.hint.error { color: var(--down); }
 
 /* Drawing tools */
 .tools {
@@ -290,6 +294,10 @@ input[type="number"] {
 .rows.head { color: var(--muted); }
 .tr .buy { color: var(--up); }
 .tr .sell { color: var(--down); }
+
+.position .btn { flex: none; }
+.position .tr { grid-template-columns: 1.3fr 1fr 1fr; }
+.position .tr span:nth-child(2) { color: var(--muted); }
 
 .open-orders .tr { grid-template-columns: 0.7fr 1fr 1fr 22px; }
 .open-orders .tr span:nth-child(2) { text-align: right; }

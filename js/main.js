@@ -29,6 +29,9 @@
   let speed = 60;      // ticks (market seconds) per real second
   let paused = false;
   let timeframe = 60;  // candle size in seconds
+  let mode = 'stock';  // 'stock': sell only what you own. 'forex': you may sell first (short).
+  let entry = 0;       // average price I got into my position at
+  const isOpen = (qty) => Math.abs(qty) > Position.FLAT;
 
   /* ---------------- formatting ---------------- */
 
@@ -43,7 +46,10 @@
 
   market.onTrade = (t) => {
     if (t.buyer !== ME && t.seller !== ME) return;
-    myTrades.unshift({ time: t.time, side: t.buyer === ME ? 'buy' : 'sell', price: t.price, qty: t.qty });
+    const side = t.buyer === ME ? 'buy' : 'sell';
+    const after = market.account(ME).asset;
+    entry = Position.entryAfterFill(entry, after - (side === 'buy' ? t.qty : -t.qty), side, t.price, t.qty);
+    myTrades.unshift({ time: t.time, side, price: t.price, qty: t.qty });
     if (myTrades.length > 200) myTrades.pop();
     tradesDirty = true;
   };
@@ -78,6 +84,19 @@
     say(parts.join('. '));
   }
 
+  // Close the whole position with a market order.
+  function closePosition(reason) {
+    const qty = market.account(ME).asset;
+    if (!isOpen(qty)) return;
+    const side = qty > 0 ? 'sell' : 'buy';
+    // My waiting orders on that side would hold back what the close needs.
+    for (const o of market.openOrders(ME)) if (o.side === side) market.cancel(o.id);
+    const result = market.placeMarket(ME, side, Math.abs(qty));
+    if (!result.ok) return say(reason + ', but closing failed: ' + result.error, true);
+    say(reason + '. ' + describeFills(side, result));
+  }
+
+  $('close-position').addEventListener('click', () => closePosition('Position closed'));
   $('market-buy').addEventListener('click', () => submitMarket('buy'));
   $('market-sell').addEventListener('click', () => submitMarket('sell'));
   $('limit-buy').addEventListener('click', () => submitLimit('buy'));
@@ -93,6 +112,32 @@
   function setActive(container, button) {
     for (const b of container.querySelectorAll('.btn')) b.classList.toggle('active', b === button);
   }
+
+  // Market: stock or forex
+  const MODE_HINTS = {
+    stock: 'Stock: you can only sell what you own.',
+    forex: 'Forex: you can sell first and buy back later.',
+  };
+  function setMode(next) {
+    const me = market.account(ME);
+    const hint = $('mode-hint');
+    if (next === 'stock' && me.asset - me.reservedAsset < -Position.FLAT) {
+      hint.textContent = 'Close your short position and cancel its sell orders before going back to Stock.';
+      hint.classList.add('error');
+      return;
+    }
+    mode = next;
+    me.canShort = mode === 'forex';
+    chart.title = 'SIM/USD · ' + (mode === 'forex' ? 'Forex' : 'Stock');
+    hint.textContent = MODE_HINTS[mode];
+    hint.classList.remove('error');
+    setActive($('modes'), $('modes').querySelector('[data-mode="' + mode + '"]'));
+  }
+  $('modes').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-mode]');
+    if (button) setMode(button.dataset.mode);
+  });
+  setMode(mode);
 
   // Time speed
   $('speed').addEventListener('input', (e) => {
@@ -150,13 +195,36 @@
     setText('ask', ask === null ? '–' : price(ask));
   }
 
+  function renderPosition() {
+    const qty = market.account(ME).asset;
+    const open = isOpen(qty);
+    $('position-row').hidden = !open;
+    $('close-position').hidden = !open;
+    $('no-position').hidden = open;
+    if (!open) return;
+    const pnl = (market.lastPrice - entry) * qty;
+    setText('pos-side', (qty > 0 ? 'Long ' : 'Short ') + amount(Math.abs(qty)));
+    setText('pos-entry', 'at ' + price(entry));
+    setText('pos-pnl', (pnl >= 0 ? '+' : '-') + usd.format(Math.abs(pnl)));
+    $('pos-side').className = qty > 0 ? 'buy' : 'sell';
+    $('pos-pnl').className = pnl >= 0 ? 'buy' : 'sell';
+  }
+
+  // Dashed lines on the chart: my waiting orders and my position.
+  let orderLines = [];
+  function renderChartLines() {
+    const lines = orderLines.slice();
+    if (isOpen(market.account(ME).asset)) lines.push({ price: entry, label: 'Entry', color: '#9aa7b8' });
+    chart.orderLines = lines;
+  }
+
   let ordersKey = null;
   function renderOpenOrders() {
     const orders = market.openOrders(ME).sort((a, b) => b.price - a.price);
     const key = orders.map((o) => o.id + ':' + o.remaining).join(',');
     if (key === ordersKey) return;
     ordersKey = key;
-    chart.orderLines = orders.map((o) => ({ price: o.price, side: o.side, label: (o.side === 'buy' ? 'Buy ' : 'Sell ') + amount(o.remaining) }));
+    orderLines = orders.map((o) => ({ price: o.price, side: o.side, label: (o.side === 'buy' ? 'Buy ' : 'Sell ') + amount(o.remaining) }));
     $('open-orders').innerHTML = orders.length
       ? orders.map((o) =>
           '<div class="tr"><span class="' + o.side + '">' + (o.side === 'buy' ? 'Buy' : 'Sell') + '</span>' +
@@ -192,7 +260,9 @@
     chart.setData(market.candles.get(timeframe), timeframe);
     chart.render();
     renderBalance();
+    renderPosition();
     renderOpenOrders();
+    renderChartLines();
     renderTrades();
     requestAnimationFrame(frame);
   }

@@ -14,6 +14,15 @@
       <h1 class="brand">Market Sim</h1>
 
       <section>
+        <h2>Market</h2>
+        <div class="seg two" id="modes">
+          <button type="button" class="btn active" data-mode="stock">Stock</button>
+          <button type="button" class="btn" data-mode="forex">Forex</button>
+        </div>
+        <p class="hint" id="mode-hint"></p>
+      </section>
+
+      <section>
         <h2>Time speed</h2>
         <div class="row spread">
           <button type="button" id="pause-btn" class="btn">Pause</button>
@@ -128,6 +137,17 @@
         <p id="order-msg" class="msg" role="status"></p>
       </section>
 
+      <section class="position">
+        <div class="row spread">
+          <h2>Position</h2>
+          <button type="button" id="close-position" class="btn small" hidden>Close</button>
+        </div>
+        <div class="rows">
+          <div class="tr" id="position-row" hidden><span id="pos-side"></span><span id="pos-entry"></span><span id="pos-pnl"></span></div>
+          <p class="empty" id="no-position">No position</p>
+        </div>
+      </section>
+
       <section class="open-orders">
         <h2>Open orders</h2>
         <div id="open-orders" class="rows"></div>
@@ -145,6 +165,7 @@
   <script src="js/engine.js"></script>
   <script src="js/indicators.js"></script>
   <script src="js/bots.js"></script>
+  <script src="js/position.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/main.js"></script>
 </body>
