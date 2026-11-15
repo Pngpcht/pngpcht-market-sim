@@ -3,6 +3,7 @@
   "private": true,
   "description": "Order-book market simulation in plain HTML and JS",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "simulate": "node tools/simulate.js"
   }
 }
