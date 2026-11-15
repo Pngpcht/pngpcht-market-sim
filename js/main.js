@@ -4,21 +4,17 @@
 (async function () {
   'use strict';
 
-  const { Market } = MarketEngine;
   const $ = (id) => document.getElementById(id);
 
   const ME = 'you';
-  const WARMUP_TICKS = 2 * 86400; // market history built before you arrive: 2 days
+  // Market history built before you arrive: from Monday 00:00 to Wednesday 13:00 GMT.
+  const WARMUP_TICKS = 61 * 3600;
 
   const start = await Config.resolveStartPrice();
-  const market = new Market({ startPrice: start.price, tickSize: Config.tickSize });
+  const sim = Simulation.create({ startPrice: start.price });
+  const market = sim.market;
   market.addAccount(ME, { cash: Config.startBalance, asset: 0 });
-  const crowd = Bots.createBots(market);
-
-  for (let i = 0; i < WARMUP_TICKS; i++) {
-    market.tick();
-    crowd.step();
-  }
+  for (let i = 0; i < WARMUP_TICKS; i++) sim.step();
 
   const chart = new CandleChart($('chart'));
   const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 600]; // slider stops
@@ -344,7 +340,7 @@
     tradesDirty = false;
     $('trades').innerHTML = myTrades.length
       ? myTrades.map((t) =>
-          '<div class="tr"><span>' + CandleChart.formatTime(t.time, true) + '</span>' +
+          '<div class="tr"><span>' + Calendar.format(t.time, true) + '</span>' +
           '<span class="' + t.side + '">' + (t.side === 'buy' ? 'Buy' : 'Sell') + '</span>' +
           '<span>' + price(t.price) + '</span><span>' + amount(t.qty) + '</span></div>').join('')
       : '<p class="empty">No trades yet</p>';
@@ -362,10 +358,8 @@
     const ticks = Math.floor(pending);
     pending -= ticks;
     for (let i = 0; i < ticks; i++) {
-      // One second of market time: the clock moves, every bot may act,
-      // then my stop loss and take profit are checked.
-      market.tick();
-      crowd.step();
+      // One second of market time, then my stop loss and take profit are checked.
+      sim.step();
       protect();
     }
 

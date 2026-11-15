@@ -12,6 +12,8 @@
 (function (root) {
   'use strict';
 
+  const Calendar = root.Calendar;
+
   const C = {
     bg: '#0d1015',
     grid: '#181e27',
@@ -39,17 +41,6 @@
   const RIGHT_GAP = 4; // empty candle slots after the latest candle
   const TIME_STEPS = [60, 300, 900, 1800, 3600, 7200, 14400, 28800, 43200, 86400, 172800, 345600, 604800];
   const TF_LABELS = { 60: '1m', 300: '5m', 900: '15m', 1800: '30m', 3600: '1h', 14400: '4h' };
-
-  const pad2 = (n) => String(n).padStart(2, '0');
-
-  // Market time (seconds since the start) as "D1 09:30" or "D1 09:30:15".
-  function formatTime(t, withSeconds) {
-    const day = Math.floor(t / 86400) + 1;
-    const h = Math.floor((t % 86400) / 3600);
-    const m = Math.floor((t % 3600) / 60);
-    const base = 'D' + day + ' ' + pad2(h) + ':' + pad2(m);
-    return withSeconds ? base + ':' + pad2(Math.floor(t % 60)) : base;
-  }
 
   function niceStep(raw) {
     const pow = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -123,9 +114,38 @@
     indexOfX(x) { const g = this.g; return g.rightIdx + 0.5 - (g.plotW - x) / this.candleW; }
     yOfPrice(p) { const g = this.g; return PAD_TOP + ((g.max - p) / (g.max - g.min)) * g.innerH; }
     priceOfY(y) { const g = this.g; return g.max - ((y - PAD_TOP) / g.innerH) * (g.max - g.min); }
-    // Candle i covers market time [i * tf, (i + 1) * tf) and is drawn at its middle.
-    xOfTime(t) { return this.xOfIndex(t / this.tf - 0.5); }
-    timeOfX(x) { return (this.indexOfX(x) + 0.5) * this.tf; }
+    // Candles carry their own market time, and closed hours (weekends) have
+    // no candles, so time is looked up rather than computed from the index.
+
+    // Market time at the start of candle slot i. Slots before the first and
+    // after the last candle continue at one candle per timeframe.
+    timeOfIndex(i) {
+      const c = this.candles, n = c.length;
+      if (i < 0) return c[0].time + i * this.tf;
+      if (i >= n) return c[n - 1].time + (i - n + 1) * this.tf;
+      return c[i].time;
+    }
+
+    // Candle position of a market time, with a fraction for how far into the candle.
+    indexOfTime(t) {
+      const c = this.candles, n = c.length;
+      if (t < c[0].time) return (t - c[0].time) / this.tf;
+      if (t >= c[n - 1].time) return n - 1 + (t - c[n - 1].time) / this.tf;
+      let lo = 0, hi = n - 1; // last candle that starts at or before t
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (c[mid].time <= t) lo = mid; else hi = mid - 1;
+      }
+      return lo + Math.min(1, (t - c[lo].time) / this.tf);
+    }
+
+    // A candle is drawn at the middle of its slot.
+    xOfTime(t) { return this.xOfIndex(this.indexOfTime(t) - 0.5); }
+    timeOfX(x) {
+      const pos = this.indexOfX(x) + 0.5;
+      const i = Math.floor(pos);
+      return this.timeOfIndex(i) + (pos - i) * this.tf;
+    }
 
     /* ---- input ---- */
 
@@ -331,17 +351,21 @@
       // Time lines
       const wanted = (this.tf / this.candleW) * 90; // seconds per ~90px
       const tStep = TIME_STEPS.find((s) => s >= wanted && s >= this.tf) || TIME_STEPS[TIME_STEPS.length - 1];
-      const t0 = Math.max(0, this.timeOfX(0));
-      const t1 = this.timeOfX(plotW);
+      const i0 = Math.max(0, Math.floor(this.indexOfX(0)));
+      const i1 = Math.ceil(this.indexOfX(plotW));
+      let lastX = -Infinity;
       ctx.textAlign = 'center';
-      for (let t = Math.ceil(t0 / tStep) * tStep; t <= t1; t += tStep) {
-        const x = Math.round(this.xOfIndex(t / this.tf)) + 0.5;
-        if (x < 24 || x > plotW - 20) continue;
+      for (let i = i0; i <= i1; i++) {
+        const t = this.timeOfIndex(i);
+        if (t % tStep !== 0) continue;
+        const x = Math.round(this.xOfIndex(i)) + 0.5;
+        if (x < 24 || x > plotW - 20 || x - lastX < 50) continue; // labels crowd after a weekend gap
+        lastX = x;
         ctx.strokeStyle = C.grid;
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, plotH); ctx.stroke();
         ctx.fillStyle = C.text;
-        const label = t % 86400 === 0 ? 'Day ' + (t / 86400 + 1) : formatTime(t).split(' ')[1];
-        ctx.fillText(label, x, plotH + AXIS_H / 2);
+        const [day, clock] = Calendar.format(t).split(' ');
+        ctx.fillText(t % 86400 === 0 ? day : clock, x, plotH + AXIS_H / 2);
       }
 
       // Axis borders
@@ -502,7 +526,7 @@
       this._axisLabel(y, this.priceOfY(m.y).toFixed(2), C.label, C.bright);
 
       if (i >= 0) {
-        const text = formatTime(i * this.tf);
+        const text = Calendar.format(this.timeOfIndex(i)) + ' GMT';
         const tw = ctx.measureText(text).width + 14;
         const tx = Math.max(0, Math.min(g.plotW - tw, x - tw / 2));
         ctx.fillStyle = C.label;
@@ -553,6 +577,5 @@
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   }
 
-  CandleChart.formatTime = formatTime;
   root.CandleChart = CandleChart;
 })(window);

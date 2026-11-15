@@ -70,17 +70,36 @@
       this.lastClose = price;
     }
 
-    // Candles for a timeframe given in seconds (a multiple of 60).
+    // Jump over a time with no market (a weekend). No candles are made for
+    // it: the next candle starts at `time`.
+    skipTo(time) {
+      const bucket = Math.floor(time / BASE_TF) * BASE_TF;
+      const last = this.base[this.base.length - 1];
+      if (last && bucket <= last.time) return;
+      const p = this.lastClose;
+      this.base.push({ time: bucket, open: p, high: p, low: p, close: p, volume: 0, trades: 0 });
+    }
+
+    // Candles for a timeframe given in seconds (a multiple of 60). A candle
+    // holds the 1-minute candles whose time falls inside it, so skipped
+    // time leaves a gap instead of an empty candle.
     get(tf) {
       if (tf === BASE_TF) return this.base;
-      const m = Math.round(tf / BASE_TF);
-      let out = this._cache.get(tf);
-      if (!out) this._cache.set(tf, (out = []));
+      let cache = this._cache.get(tf);
+      if (!cache) this._cache.set(tf, (cache = { out: [], from: 0 }));
+      const out = cache.out;
       // The last merged candle may still be growing: rebuild from there.
-      const from = Math.max(0, out.length - 1);
-      out.length = from;
-      for (let k = from; k * m < this.base.length; k++) {
-        out.push(mergeCandles(this.base, k * m, Math.min((k + 1) * m, this.base.length)));
+      if (out.length) out.length -= 1;
+      let i = cache.from;
+      while (i < this.base.length) {
+        const bucket = Math.floor(this.base[i].time / tf) * tf;
+        let end = i + 1;
+        while (end < this.base.length && this.base[end].time < bucket + tf) end++;
+        const candle = mergeCandles(this.base, i, end);
+        candle.time = bucket;
+        out.push(candle);
+        cache.from = i;
+        i = end;
       }
       return out;
     }
@@ -194,6 +213,13 @@
     tick() {
       this.time += 1;
       this.candles.advanceTo(this.time);
+    }
+
+    // Jump the clock over a time when the market is closed. Nothing trades
+    // and no candles are made for the skipped time.
+    skipTo(time) {
+      this.time = time;
+      this.candles.skipTo(time);
     }
 
     /* ---- orders ---- */
