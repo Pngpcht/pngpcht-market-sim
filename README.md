@@ -26,3 +26,12 @@ npm test
 ```
 
 Runs the engine tests with Node's built-in test runner. Nothing to install.
+
+## Controls
+
+- **Time speed**: how many ticks run per real second (1× to 600×), plus Pause.
+- **Timeframe**: 1m, 5m, 15m, 30m, 1h, 4h.
+- **Chart**: drag to pan, scroll to zoom, double-click to jump back to the latest candle.
+- **Drawing tools**: pick a tool, then drag on the chart (or click once for each end).
+  Click a drawing and press Delete to remove it. Escape cancels.
+- **Indicators**: SMA and EMA with your own period.

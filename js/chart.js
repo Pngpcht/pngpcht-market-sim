@@ -3,6 +3,11 @@
  *
  * Drag to pan, scroll to zoom, double-click to jump back to the latest candle.
  * The chart only draws what it is given: candles come from the engine.
+ *
+ * Drawings (trendline, horizontal line, rectangle, fib) are anchored to
+ * market time and price, so they stay put across pans, zooms and timeframes.
+ * Drag to draw, or click once for each end. Click a drawing to select it,
+ * Delete removes it, Escape cancels.
  */
 (function (root) {
   'use strict';
@@ -17,11 +22,19 @@
     down: '#ef5350',
     cross: '#56627a',
     label: '#2c3646',
+    draw: '#4c8dff',
+    drawHi: '#9cc0ff',
+    drawFill: 'rgba(76, 141, 255, 0.12)',
+    sma: '#f5b83d',
+    ema: '#b388ff',
   };
+  const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  const FIB_COLORS = ['#8a94a6', '#ef5350', '#f5b83d', '#26a69a', '#4c8dff', '#b388ff', '#8a94a6'];
+  const HIT = 6; // pixels: how close a click must be to select a drawing
   const FONT = '11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const AXIS_W = 62;   // price axis on the right
   const AXIS_H = 24;   // time axis at the bottom
-  const PAD_TOP = 34;
+  const PAD_TOP = 46;
   const PAD_BOTTOM = 12;
   const RIGHT_GAP = 4; // empty candle slots after the latest candle
   const TIME_STEPS = [60, 300, 900, 1800, 3600, 7200, 14400, 28800, 43200, 86400, 172800, 345600, 604800];
@@ -54,6 +67,12 @@
       this.candleW = 8; // pixels per candle
       this.scroll = 0;  // candles the view is shifted back from the latest
       this.orderLines = []; // [{ price, side, label }]
+      this.indicators = []; // [{ type: 'sma' | 'ema', period }]
+      this.drawings = [];   // [{ type, a: { t, p }, b: { t, p } }]
+      this.tool = 'cursor';
+      this.onToolChange = null;
+      this._draft = null;   // drawing in progress
+      this._selected = -1;
       this.mouse = null;
       this.g = null;    // geometry of the last render
       this._pan = null;
@@ -78,6 +97,24 @@
     resetView() {
       this.scroll = 0;
       this.candleW = 8;
+    }
+
+    setTool(tool) {
+      this.tool = tool;
+      this._draft = null;
+      if (tool !== 'cursor') this._selected = -1;
+      if (this.onToolChange) this.onToolChange(tool);
+    }
+
+    undoDrawing() {
+      this.drawings.pop();
+      this._selected = -1;
+    }
+
+    clearDrawings() {
+      this.drawings = [];
+      this._draft = null;
+      this._selected = -1;
     }
 
     /* ---- coordinates (valid after a render) ---- */
@@ -114,7 +151,15 @@
         this._onUp(pos(e), e);
       });
       cv.addEventListener('pointerleave', () => { this.mouse = null; });
-      cv.addEventListener('dblclick', () => this.resetView());
+      cv.addEventListener('dblclick', () => { if (this.tool === 'cursor') this.resetView(); });
+      root.addEventListener('keydown', (e) => {
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+        if (e.key === 'Escape') this.setTool('cursor');
+        if ((e.key === 'Delete' || e.key === 'Backspace') && this._selected >= 0) {
+          this.drawings.splice(this._selected, 1);
+          this._selected = -1;
+        }
+      });
       cv.addEventListener('wheel', (e) => {
         if (!this.g) return;
         e.preventDefault();
@@ -128,19 +173,72 @@
       }, { passive: false });
     }
 
+    _point(p) {
+      return { t: this.timeOfX(p.x), p: this.priceOfY(p.y) };
+    }
+
     _onDown(p) {
-      if (p.x < this.g.plotW) this._pan = { x: p.x, scroll: this.scroll };
+      if (p.x >= this.g.plotW || p.y >= this.g.plotH) return;
+      if (this.tool === 'cursor') {
+        this._selected = this._hit(p);
+        this._pan = { x: p.x, scroll: this.scroll };
+      } else if (this.tool === 'hline') {
+        this._finish({ type: 'hline', a: this._point(p), b: this._point(p) });
+      } else if (this._draft && this._draft.clicked) {
+        // Second click of a click-click drawing.
+        this._draft.b = this._point(p);
+        this._finish(this._draft);
+      } else {
+        this._draft = { type: this.tool, a: this._point(p), b: this._point(p), downAt: p, clicked: false };
+      }
     }
 
     _onMove(p) {
+      if (this._draft) this._draft.b = this._point(p);
       if (this._pan) {
         this.scroll = this._pan.scroll + (p.x - this._pan.x) / this.candleW;
         if (Math.abs(this.scroll) < 0.5) this.scroll = 0; // snap back to following
       }
     }
 
-    _onUp() {
+    _onUp(p) {
       this._pan = null;
+      const d = this._draft;
+      if (!d || d.clicked) return;
+      const dragged = Math.hypot(p.x - d.downAt.x, p.y - d.downAt.y) > 4;
+      if (dragged) this._finish(d);
+      else d.clicked = true; // a plain click: wait for the second click
+    }
+
+    _finish(d) {
+      this.drawings.push({ type: d.type, a: d.a, b: d.b });
+      this.setTool('cursor');
+    }
+
+    // Pixel box of a two-point drawing. Fib gets a minimum width so its labels fit.
+    _box(d) {
+      const ax = this.xOfTime(d.a.t), bx = this.xOfTime(d.b.t);
+      const ay = this.yOfPrice(d.a.p), by = this.yOfPrice(d.b.p);
+      const x0 = Math.min(ax, bx);
+      let x1 = Math.max(ax, bx);
+      if (d.type === 'fib') x1 = Math.max(x1, x0 + 110);
+      return { ax, ay, bx, by, x0, x1, y0: Math.min(ay, by), y1: Math.max(ay, by) };
+    }
+
+    // Index of the drawing under a point, newest first, or -1.
+    _hit(p) {
+      for (let i = this.drawings.length - 1; i >= 0; i--) {
+        const d = this.drawings[i];
+        const b = this._box(d);
+        if (d.type === 'hline') {
+          if (Math.abs(p.y - b.ay) <= HIT) return i;
+        } else if (d.type === 'trendline') {
+          if (distToSegment(p.x, p.y, b.ax, b.ay, b.bx, b.by) <= HIT) return i;
+        } else if (p.x >= b.x0 - HIT && p.x <= b.x1 + HIT && p.y >= b.y0 - HIT && p.y <= b.y1 + HIT) {
+          return i;
+        }
+      }
+      return -1;
     }
 
     _resize() {
@@ -204,6 +302,8 @@
       ctx.rect(0, 0, plotW, plotH);
       ctx.clip();
       this._drawCandles(g);
+      this._drawIndicators(g);
+      this._drawDrawings(g);
       this._drawOrderLines(g);
       ctx.restore();
 
@@ -267,6 +367,78 @@
         ctx.fillRect(x, yH, 1, Math.max(1, yL - yH));
         ctx.fillRect(x - Math.floor(bodyW / 2), top, bodyW, bodyH);
       }
+    }
+
+    _drawIndicators(g) {
+      const ctx = this.ctx;
+      g.legend = [];
+      for (const ind of this.indicators) {
+        // Only the visible part is computed, plus a warm-up before it.
+        const warm = ind.type === 'ema' ? ind.period * 6 : ind.period;
+        const start = Math.max(0, g.first - warm);
+        const closes = [];
+        for (let i = start; i <= g.last; i++) closes.push(this.candles[i].close);
+        const values = root.Indicators[ind.type](closes, ind.period);
+        const color = C[ind.type];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let started = false;
+        for (let i = g.first; i <= g.last; i++) {
+          const v = values[i - start];
+          if (v === null) continue;
+          const x = this.xOfIndex(i), y = this.yOfPrice(v);
+          if (started) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+          started = true;
+        }
+        ctx.stroke();
+        const hover = this._hoverIndex(g);
+        const at = hover >= start && hover <= g.last ? hover : g.last;
+        g.legend.push({ text: ind.type.toUpperCase() + ' ' + ind.period, value: values[at - start], color });
+      }
+      ctx.lineWidth = 1;
+    }
+
+    _drawDrawings(g) {
+      const ctx = this.ctx;
+      const list = this._draft ? this.drawings.concat(this._draft) : this.drawings;
+      const line = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
+      list.forEach((d, i) => {
+        const active = i === this._selected || d === this._draft;
+        const b = this._box(d);
+        ctx.lineWidth = active ? 2 : 1.25;
+        ctx.strokeStyle = ctx.fillStyle = active ? C.drawHi : C.draw;
+        if (d.type === 'hline') {
+          const y = Math.round(b.ay) + 0.5;
+          line(0, y, g.plotW, y);
+          ctx.textAlign = 'right';
+          ctx.fillText(d.a.p.toFixed(2), g.plotW - 6, y - 8);
+        } else if (d.type === 'trendline') {
+          line(b.ax, b.ay, b.bx, b.by);
+          if (active) {
+            for (const [x, y] of [[b.ax, b.ay], [b.bx, b.by]]) { ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+          }
+        } else if (d.type === 'rect') {
+          ctx.fillStyle = C.drawFill;
+          ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+          ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+        } else if (d.type === 'fib') {
+          // Level 0 at the end point, level 1 at the start point.
+          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = C.cross;
+          line(b.ax, b.ay, b.bx, b.by);
+          ctx.setLineDash([]);
+          ctx.textAlign = 'left';
+          FIB_LEVELS.forEach((level, k) => {
+            const p = d.b.p + (d.a.p - d.b.p) * level;
+            const y = Math.round(this.yOfPrice(p)) + 0.5;
+            ctx.strokeStyle = ctx.fillStyle = FIB_COLORS[k];
+            line(b.x0, y, b.x1, y);
+            ctx.fillText(level + '  ' + p.toFixed(2), b.x0 + 4, y - 7);
+          });
+        }
+      });
+      ctx.lineWidth = 1;
     }
 
     _drawOrderLines(g) {
@@ -357,14 +529,28 @@
       ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       put(this.title + ' · ' + (TF_LABELS[this.tf] || this.tf + 's'), C.bright);
       ctx.font = FONT;
-      if (g.plotW < 420) return; // not enough room for the numbers
-      const color = c.close >= c.open ? C.up : C.down;
-      for (const [k, v] of [['O', c.open], ['H', c.high], ['L', c.low], ['C', c.close]]) {
-        put(k, C.text);
-        x -= 4;
-        put(v.toFixed(2), color);
+      if (g.plotW >= 420) { // enough room for the numbers
+        const color = c.close >= c.open ? C.up : C.down;
+        for (const [k, v] of [['O', c.open], ['H', c.high], ['L', c.low], ['C', c.close]]) {
+          put(k, C.text);
+          x -= 4;
+          put(v.toFixed(2), color);
+        }
+      }
+      x = 12;
+      for (const item of g.legend || []) {
+        ctx.fillStyle = item.color;
+        ctx.fillText(item.text + (item.value == null ? '' : '  ' + item.value.toFixed(2)), x, 34);
+        x += ctx.measureText(item.text + '  000.00').width + 14;
       }
     }
+  }
+
+  function distToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   }
 
   CandleChart.formatTime = formatTime;

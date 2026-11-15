@@ -16,7 +16,9 @@
   seedBook();
 
   const chart = new CandleChart($('chart'));
+  const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 600]; // slider stops
   let speed = 60;      // ticks (market seconds) per real second
+  let paused = false;
   let timeframe = 60;  // candle size in seconds
 
   // Temporary: resting orders on both sides so trades can fill.
@@ -87,6 +89,49 @@
   });
   $('limit-price').value = price(START_PRICE);
 
+  /* ---------------- left panel ---------------- */
+
+  function setActive(container, button) {
+    for (const b of container.querySelectorAll('.btn')) b.classList.toggle('active', b === button);
+  }
+
+  // Time speed
+  $('speed').addEventListener('input', (e) => {
+    speed = SPEEDS[e.target.value];
+    $('speed-label').textContent = speed + '×';
+  });
+  $('pause-btn').addEventListener('click', () => {
+    paused = !paused;
+    $('pause-btn').textContent = paused ? 'Play' : 'Pause';
+    $('pause-btn').classList.toggle('active', paused);
+  });
+
+  // Timeframe
+  $('timeframes').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-tf]');
+    if (!button) return;
+    timeframe = Number(button.dataset.tf);
+    setActive($('timeframes'), button);
+  });
+
+  // Drawing tools
+  $('tools').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-tool]');
+    if (button) chart.setTool(button.dataset.tool);
+  });
+  chart.onToolChange = (tool) => setActive($('tools'), $('tools').querySelector('[data-tool="' + tool + '"]'));
+  $('undo-drawing').addEventListener('click', () => chart.undoDrawing());
+  $('clear-drawings').addEventListener('click', () => chart.clearDrawings());
+
+  // Indicators
+  function readIndicators() {
+    chart.indicators = ['sma', 'ema']
+      .filter((type) => $(type + '-on').checked)
+      .map((type) => ({ type, period: Math.max(2, Math.min(500, parseInt($(type + '-period').value, 10) || 2)) }));
+  }
+  for (const id of ['sma-on', 'sma-period', 'ema-on', 'ema-period']) $(id).addEventListener('input', readIndicators);
+  readIndicators();
+
   /* ---------------- rendering the right panel ---------------- */
 
   const shown = {};
@@ -140,7 +185,7 @@
   function frame(now) {
     const dt = Math.min(1, (now - lastFrame) / 1000); // a slow frame still advances the market
     lastFrame = now;
-    pending += dt * speed;
+    pending = paused ? 0 : pending + dt * speed;
     const ticks = Math.floor(pending);
     pending -= ticks;
     for (let i = 0; i < ticks; i++) market.tick();

@@ -12,7 +12,7 @@
     <!-- Left panel: time, timeframe, drawing tools, indicators -->
     <aside class="panel left">
       <h1 class="brand">Market Sim</h1>
-      <fieldset id="left-controls" disabled>
+      <fieldset id="left-controls">
 
         <section>
           <h2>Time speed</h2>
@@ -64,6 +64,7 @@
             <button type="button" id="undo-drawing" class="btn small">Undo</button>
             <button type="button" id="clear-drawings" class="btn small">Clear all</button>
           </div>
+          <p class="hint">Drag on the chart to draw. Click a drawing and press Delete to remove it.</p>
         </section>
 
         <section>
@@ -145,6 +146,7 @@
   </div>
 
   <script src="js/engine.js"></script>
+  <script src="js/indicators.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/main.js"></script>
 </body>
