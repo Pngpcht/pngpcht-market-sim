@@ -1,20 +1,18 @@
 /*
  * Wires the engine, the chart and the panels together.
  */
-(function () {
+(async function () {
   'use strict';
 
   const { Market } = MarketEngine;
   const $ = (id) => document.getElementById(id);
 
   const ME = 'you';
-  const START_PRICE = 100;
-  const START_BALANCE = 10000;
-
   const WARMUP_TICKS = 2 * 86400; // market history built before you arrive: 2 days
 
-  const market = new Market({ startPrice: START_PRICE });
-  market.addAccount(ME, { cash: START_BALANCE, asset: 0 });
+  const start = await Config.resolveStartPrice();
+  const market = new Market({ startPrice: start.price, tickSize: Config.tickSize });
+  market.addAccount(ME, { cash: Config.startBalance, asset: 0 });
   const crowd = Bots.createBots(market);
 
   for (let i = 0; i < WARMUP_TICKS; i++) {
@@ -210,7 +208,7 @@
     }
     mode = next;
     me.canShort = mode === 'forex';
-    chart.title = 'SIM/USD · ' + (mode === 'forex' ? 'Forex' : 'Stock');
+    chart.title = Config.symbol + ' · ' + (mode === 'forex' ? 'Forex' : 'Stock');
     hint.textContent = MODE_HINTS[mode];
     hint.classList.remove('error');
     setActive($('modes'), $('modes').querySelector('[data-mode="' + mode + '"]'));

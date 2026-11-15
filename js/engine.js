@@ -23,7 +23,6 @@
   const EPS = 1e-9;
   const BASE_TF = 60; // candles are stored per minute; 1 tick = 1 second
 
-  const roundPrice = (p) => Math.round(p * 100) / 100; // 1 cent price steps
   const floorQty = (q) => Math.floor(q * 1e4 + 1e-6) / 1e4; // 4 decimals
   const clean = (x) => (Math.abs(x) < 1e-7 ? 0 : x);
 
@@ -109,9 +108,11 @@
   /* ---------------------------------------------------------------- */
 
   class Market {
-    constructor({ startPrice = 100 } = {}) {
+    constructor({ startPrice = 100, tickSize = 0.01 } = {}) {
       this.time = 0; // seconds of market time
-      this.lastPrice = startPrice;
+      this.tickSize = tickSize; // every price is rounded to a multiple of this
+      this._ticksPerUnit = Math.round(1 / tickSize);
+      this.lastPrice = this.roundPrice(startPrice);
       this.accounts = new Map();
       this.orders = new Map(); // open orders by id
       // Both sides are sorted so the best order is LAST (cheap to pop):
@@ -119,12 +120,14 @@
       // prices the older order sits closer to the end.
       this.bids = [];
       this.asks = [];
-      this.candles = new CandleStore(startPrice);
+      this.candles = new CandleStore(this.lastPrice);
       this.tradeCount = 0;
       this.onTrade = null; // optional callback(trade)
       this._nextOrderId = 1;
       this.candles.advanceTo(0);
     }
+
+    roundPrice(p) { return Math.round(p * this._ticksPerUnit) / this._ticksPerUnit; }
 
     /* ---- accounts ---- */
 
@@ -180,7 +183,7 @@
     // Limit order: trades against anything it crosses, the rest waits in the book.
     placeLimit(accountId, side, price, qty) {
       const acct = this.accounts.get(accountId);
-      price = roundPrice(price);
+      price = this.roundPrice(price);
       qty = floorQty(qty);
       if (!acct) return fail('Unknown account');
       if (side !== 'buy' && side !== 'sell') return fail('Side must be buy or sell');

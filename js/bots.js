@@ -10,8 +10,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // A "normal" order: 1.5% of a 10,000 balance. The whale multiplies this.
-  const NORMAL_ORDER_VALUE = 150;
+  // A "normal" order in ounces (0.1 lot): 1.5% of what a random bot holds.
+  // The whale multiplies this.
+  const NORMAL_ORDER_OZ = 10;
 
   const between = (rng, lo, hi) => lo + rng() * (hi - lo);
 
@@ -76,7 +77,7 @@
   class HftBot {
     constructor(id, gap) {
       this.id = id;
-      this.gap = gap; // distance from the price, as a fraction of the price
+      this.gap = gap; // distance from the price, in dollars
       this.quotedAt = null;
       this.bid = null;
       this.ask = null;
@@ -88,9 +89,8 @@
       if (price === this.quotedAt && untouched(this.bid) && untouched(this.ask)) return; // nothing to move
       market.cancelAll(this.id);
       const acct = market.account(this.id);
-      const gap = Math.max(0.01, price * this.gap);
-      this.bid = market.placeLimit(this.id, 'buy', price - gap, (0.01 * acct.cash) / price).order;
-      this.ask = market.placeLimit(this.id, 'sell', price + gap, 0.01 * acct.asset).order;
+      this.bid = market.placeLimit(this.id, 'buy', price - this.gap, (0.01 * acct.cash) / price).order;
+      this.ask = market.placeLimit(this.id, 'sell', price + this.gap, 0.01 * acct.asset).order;
       this.quotedAt = price;
     }
   }
@@ -105,29 +105,30 @@
     act(market, rng) {
       if (rng() > 1 / 2400) return; // about once every 40 minutes of market time
       const side = rng() < 0.5 ? 'buy' : 'sell';
-      let qty = (between(rng, 10, 50) * NORMAL_ORDER_VALUE) / market.lastPrice;
+      let qty = between(rng, 10, 50) * NORMAL_ORDER_OZ;
       if (side === 'sell') qty = Math.min(qty, market.availableAsset(this.id));
       market.placeMarket(this.id, side, qty);
     }
   }
 
-  // Create the crowd and give each bot an account. Balances are set so
-  // that, at the starting price, everyone holds half cash and half asset.
+  // Create the crowd and give each bot an account. Each bot holds the given
+  // number of ounces and the same value again in cash, at the starting price.
   function createBots(market, rng = Math.random) {
     const price = market.lastPrice;
     const bots = [];
-    const add = (bot, cash) => {
-      market.addAccount(bot.id, { cash, asset: cash / price });
+    const add = (bot, ounces) => {
+      market.addAccount(bot.id, { cash: ounces * price, asset: ounces });
       bots.push(bot);
     };
-    for (let i = 1; i <= 30; i++) add(new RandomBot('random-' + i), 10000);
-    add(new TrendBot('trend-1', 5, 20), 10000);
-    add(new TrendBot('trend-2', 10, 30), 10000);
-    add(new TrendBot('trend-3', 20, 60), 10000);
-    add(new TrendBot('trend-4', 30, 120), 10000);
-    add(new HftBot('hft-1', 0.0002), 50000);
-    add(new HftBot('hft-2', 0.0004), 50000);
-    add(new WhaleBot('whale'), 1000000);
+    const normal = NORMAL_ORDER_OZ / 0.015; // holdings that make a typical order "normal"
+    for (let i = 1; i <= 30; i++) add(new RandomBot('random-' + i), normal);
+    add(new TrendBot('trend-1', 5, 20), normal);
+    add(new TrendBot('trend-2', 10, 30), normal);
+    add(new TrendBot('trend-3', 20, 60), normal);
+    add(new TrendBot('trend-4', 30, 120), normal);
+    add(new HftBot('hft-1', 0.08), normal);
+    add(new HftBot('hft-2', 0.15), normal);
+    add(new WhaleBot('whale'), 100 * normal);
 
     return {
       bots,
@@ -139,5 +140,5 @@
     };
   }
 
-  return { createBots, WhaleBot, NORMAL_ORDER_VALUE };
+  return { createBots, WhaleBot, NORMAL_ORDER_OZ };
 });
