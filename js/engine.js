@@ -7,8 +7,11 @@
  * - Makers rest limit orders in the book. Takers hit them.
  * - A trade always happens at the resting (maker) order's price.
  * - The market price is the price of the last trade.
- * - No fees and no shorting: you can only sell what you hold and only buy
- *   what you can pay for. Resting orders reserve the funds they need.
+ * - No fees. You can only buy what you can pay for, and resting orders
+ *   reserve the funds they need.
+ * - By default there is no shorting: you can only sell what you hold.
+ *   An account with `canShort` may sell without holding (its asset goes
+ *   negative) until the short is worth as much as the whole account.
  */
 (function (root, factory) {
   const api = factory();
@@ -125,8 +128,8 @@
 
     /* ---- accounts ---- */
 
-    addAccount(id, { cash = 0, asset = 0 } = {}) {
-      const account = { id, cash, asset, reservedCash: 0, reservedAsset: 0, open: new Set() };
+    addAccount(id, { cash = 0, asset = 0, canShort = false } = {}) {
+      const account = { id, cash, asset, canShort, reservedCash: 0, reservedAsset: 0, open: new Set() };
       this.accounts.set(id, account);
       return account;
     }
@@ -141,6 +144,22 @@
     availableAsset(id) {
       const a = this.accounts.get(id);
       return Math.max(0, a.asset - a.reservedAsset);
+    }
+
+    // What the account is worth right now: cash plus its position at the last price.
+    equity(id) {
+      const a = this.accounts.get(id);
+      return a.cash + a.asset * this.lastPrice;
+    }
+
+    // How much the account may sell right now. Without shorting that is what
+    // it holds. With shorting it may go on until the short position is worth
+    // as much as the account itself.
+    sellable(id) {
+      const a = this.accounts.get(id);
+      const free = a.asset - a.reservedAsset;
+      if (!a.canShort) return Math.max(0, free);
+      return Math.max(0, floorQty(free + this.equity(id) / this.lastPrice));
     }
 
     /* ---- book ---- */
@@ -168,7 +187,7 @@
       if (!(price > 0)) return fail('Price must be above zero');
       if (!(qty > 0)) return fail('Amount must be above zero');
       if (side === 'buy' && price * qty > this.availableCash(accountId) + EPS) return fail('Not enough cash');
-      if (side === 'sell' && qty > this.availableAsset(accountId) + EPS) return fail('Not enough to sell (no shorting)');
+      if (side === 'sell' && qty > this.sellable(accountId) + EPS) return fail(sellError(acct));
 
       const fills = this._match(acct, side, qty, price);
       const filled = sumQty(fills);
@@ -189,7 +208,7 @@
       if (!acct) return fail('Unknown account');
       if (side !== 'buy' && side !== 'sell') return fail('Side must be buy or sell');
       if (!(qty > 0)) return fail('Amount must be above zero');
-      if (side === 'sell' && qty > this.availableAsset(accountId) + EPS) return fail('Not enough to sell (no shorting)');
+      if (side === 'sell' && qty > this.sellable(accountId) + EPS) return fail(sellError(acct));
       const book = side === 'buy' ? this.asks : this.bids;
       if (!book.length) return fail('No orders to trade against');
 
@@ -299,6 +318,10 @@
       if (acct.open.size === 0) { acct.reservedCash = 0; acct.reservedAsset = 0; } // drop rounding drift
       order.remaining = 0;
     }
+  }
+
+  function sellError(acct) {
+    return acct.canShort ? 'Short would be bigger than your account' : 'Not enough to sell (no shorting)';
   }
 
   function fail(error) { return { ok: false, error, order: null, fills: [], filled: 0 }; }

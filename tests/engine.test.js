@@ -78,6 +78,34 @@ test('no shorting and no buying beyond your cash', () => {
   assert.equal(m.placeLimit('me', 'sell', 111, 1).ok, false);
 });
 
+test('an account that can short may sell without buying first', () => {
+  const m = setup();
+  m.addAccount('fx', { cash: 10000, asset: 0, canShort: true });
+  m.placeLimit('maker', 'sell', 100, 1);
+  m.placeMarket('me', 'buy', 1); // sets the last price to 100
+  m.placeLimit('maker', 'buy', 100, 500);
+
+  // Sell 40 without holding any: the position goes negative, the cash comes in.
+  assert.equal(m.placeMarket('fx', 'sell', 40).filled, 40);
+  assert.equal(m.account('fx').asset, -40);
+  assert.equal(m.account('fx').cash, 14000);
+  assert.equal(m.equity('fx'), 10000);
+
+  // The short can grow until it is worth the whole account (100 here), no further.
+  assert.equal(m.sellable('fx'), 60);
+  assert.equal(m.placeMarket('fx', 'sell', 61).ok, false);
+  assert.equal(m.placeLimit('fx', 'sell', 101, 60).ok, true);
+  assert.equal(m.placeLimit('fx', 'sell', 101, 1).ok, false); // resting sells count too
+  m.cancelAll('fx');
+
+  // Buying back closes the short.
+  m.cancelAll('maker');
+  m.placeLimit('maker', 'sell', 100, 500);
+  m.placeMarket('fx', 'buy', 40);
+  assert.equal(m.account('fx').asset, 0);
+  assert.equal(m.account('fx').cash, 10000);
+});
+
 test('cancelling an order releases its reserved funds', () => {
   const m = setup();
   const r = m.placeLimit('me', 'buy', 90, 10);
