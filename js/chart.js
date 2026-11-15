@@ -58,6 +58,7 @@
       this.candleW = 8; // pixels per candle
       this.scroll = 0;  // candles the view is shifted back from the latest
       this.orderLines = []; // [{ price, label, side or color }]
+      this.markers = [];    // [{ time }] news events, drawn as a flag at their time
       this.indicators = []; // [{ type: 'sma' | 'ema', period }]
       this.drawings = [];   // [{ type, a: { t, p }, b: { t, p } }]
       this.tool = 'cursor';
@@ -321,6 +322,7 @@
       ctx.beginPath();
       ctx.rect(0, 0, plotW, plotH);
       ctx.clip();
+      this._drawMarkers(g);
       this._drawCandles(g);
       this._drawIndicators(g);
       this._drawDrawings(g);
@@ -463,6 +465,26 @@
         }
       });
       ctx.lineWidth = 1;
+    }
+
+    // A dashed line and a "News" flag where each news event began.
+    _drawMarkers(g) {
+      const ctx = this.ctx;
+      const now = this.candles[this.candles.length - 1].time + this.tf;
+      ctx.textAlign = 'center';
+      for (const m of this.markers) {
+        if (m.time >= now) continue; // not released yet
+        const x = Math.round(this.xOfTime(m.time)) + 0.5;
+        if (x < 0 || x > g.plotW) continue;
+        ctx.strokeStyle = 'rgba(245, 184, 61, 0.45)';
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(x, PAD_TOP - 6); ctx.lineTo(x, g.plotH); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = C.sma;
+        ctx.fillRect(x - 17, g.plotH - 16, 34, 15);
+        ctx.fillStyle = '#1a1300';
+        ctx.fillText('News', x, g.plotH - 8);
+      }
     }
 
     _drawOrderLines(g) {

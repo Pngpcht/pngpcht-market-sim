@@ -17,6 +17,7 @@
   for (let i = 0; i < WARMUP_TICKS; i++) sim.step();
 
   const chart = new CandleChart($('chart'));
+  chart.markers = sim.news.events; // the chart shows a flag where each news event began
   const SPEEDS = [1, 2, 5, 10, 30, 60, 120, 300, 600]; // slider stops
   let speed = 60;      // ticks (market seconds) per real second
   let paused = false;
