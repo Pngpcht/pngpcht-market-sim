@@ -12,6 +12,9 @@
  * - By default there is no shorting: you can only sell what you hold.
  *   An account with `canShort` may sell without holding (its asset goes
  *   negative) until the short is worth as much as the whole account.
+ * - An account with `leverage` above 1 trades on margin: its position, long
+ *   or short, may be worth up to its equity times the leverage, and its
+ *   cash may go negative while it holds a long.
  */
 (function (root, factory) {
   const api = factory();
@@ -131,8 +134,8 @@
 
     /* ---- accounts ---- */
 
-    addAccount(id, { cash = 0, asset = 0, canShort = false } = {}) {
-      const account = { id, cash, asset, canShort, reservedCash: 0, reservedAsset: 0, open: new Set() };
+    addAccount(id, { cash = 0, asset = 0, canShort = false, leverage = 1 } = {}) {
+      const account = { id, cash, asset, canShort, leverage, reservedCash: 0, reservedAsset: 0, open: new Set() };
       this.accounts.set(id, account);
       return account;
     }
@@ -155,14 +158,29 @@
       return a.cash + a.asset * this.lastPrice;
     }
 
+    // The biggest position, long or short, a margin account may hold.
+    maxPosition(id) {
+      const a = this.accounts.get(id);
+      return Math.max(0, (this.equity(id) * a.leverage) / this.lastPrice);
+    }
+
     // How much the account may sell right now. Without shorting that is what
-    // it holds. With shorting it may go on until the short position is worth
-    // as much as the account itself.
+    // it holds. With shorting it may go on until the short position reaches
+    // the biggest position its equity and leverage allow.
     sellable(id) {
       const a = this.accounts.get(id);
       const free = a.asset - a.reservedAsset;
       if (!a.canShort) return Math.max(0, free);
-      return Math.max(0, floorQty(free + this.equity(id) / this.lastPrice));
+      return Math.max(0, floorQty(free + this.maxPosition(id)));
+    }
+
+    // How much a margin account may still buy: up to its biggest position,
+    // counting what it holds and what its waiting buy orders would add.
+    marginBuyable(id) {
+      const a = this.accounts.get(id);
+      let waiting = 0;
+      for (const o of a.open) if (o.side === 'buy') waiting += o.remaining;
+      return Math.max(0, floorQty(this.maxPosition(id) - a.asset - waiting));
     }
 
     /* ---- book ---- */
@@ -189,7 +207,10 @@
       if (side !== 'buy' && side !== 'sell') return fail('Side must be buy or sell');
       if (!(price > 0)) return fail('Price must be above zero');
       if (!(qty > 0)) return fail('Amount must be above zero');
-      if (side === 'buy' && price * qty > this.availableCash(accountId) + EPS) return fail('Not enough cash');
+      if (side === 'buy') {
+        const tooBig = acct.leverage > 1 ? qty > this.marginBuyable(accountId) + EPS : price * qty > this.availableCash(accountId) + EPS;
+        if (tooBig) return fail(buyError(acct));
+      }
       if (side === 'sell' && qty > this.sellable(accountId) + EPS) return fail(sellError(acct));
 
       const fills = this._match(acct, side, qty, price);
@@ -216,7 +237,7 @@
       if (!book.length) return fail('No orders to trade against');
 
       const fills = this._match(acct, side, qty, null);
-      if (!fills.length) return fail(side === 'buy' ? 'Not enough cash' : 'No orders to trade against');
+      if (!fills.length) return fail(side === 'buy' ? buyError(acct) : 'No orders to trade against');
       return { ok: true, order: null, fills, filled: sumQty(fills) };
     }
 
@@ -247,8 +268,9 @@
         }
         let q = Math.min(remaining, maker.remaining);
         if (side === 'buy') {
-          q = Math.min(q, floorQty((taker.cash - taker.reservedCash) / maker.price));
-          if (q <= EPS) break; // out of cash
+          const room = taker.leverage > 1 ? this.marginBuyable(taker.id) : floorQty((taker.cash - taker.reservedCash) / maker.price);
+          q = Math.min(q, room);
+          if (q <= EPS) break; // out of cash or margin
         }
         fills.push(this._trade(taker, maker, side, q));
         remaining = floorQty(remaining - q);
@@ -323,8 +345,13 @@
     }
   }
 
+  function buyError(acct) {
+    return acct.leverage > 1 ? 'Not enough margin for that size' : 'Not enough cash';
+  }
+
   function sellError(acct) {
-    return acct.canShort ? 'Short would be bigger than your account' : 'Not enough to sell (no shorting)';
+    if (!acct.canShort) return 'Not enough to sell (no shorting)';
+    return acct.leverage > 1 ? 'Not enough margin for that size' : 'Short would be bigger than your account';
   }
 
   function fail(error) { return { ok: false, error, order: null, fills: [], filled: 0 }; }

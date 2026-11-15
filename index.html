@@ -16,8 +16,8 @@
       <section>
         <h2>Market</h2>
         <div class="seg two" id="modes">
-          <button type="button" class="btn active" data-mode="stock">Stock</button>
-          <button type="button" class="btn" data-mode="forex">Forex</button>
+          <button type="button" class="btn" data-mode="stock">Stock</button>
+          <button type="button" class="btn active" data-mode="forex">Forex</button>
         </div>
         <p class="hint" id="mode-hint"></p>
       </section>
@@ -103,8 +103,8 @@
         <div class="balance-label">Balance</div>
         <div class="balance-cash" id="cash">$10,000.00</div>
         <div class="balance-sub">
-          <span id="holdings">0.0000 SIM</span>
-          <span id="equity">Total $10,000.00</span>
+          <span id="holdings">0.00 oz</span>
+          <span id="equity">Equity $10,000.00</span>
         </div>
       </div>
 
@@ -113,8 +113,8 @@
         <label class="field">Price
           <input type="number" id="limit-price" step="0.01" min="0.01" inputmode="decimal">
         </label>
-        <label class="field">Amount
-          <input type="number" id="limit-qty" step="0.1" min="0" value="1" inputmode="decimal">
+        <label class="field">Lots
+          <input type="number" id="limit-qty" step="0.01" min="0.01" value="0.10" inputmode="decimal">
         </label>
         <div class="row">
           <button type="button" id="limit-buy" class="btn buy">Buy limit</button>
@@ -127,13 +127,14 @@
           <h2>Market order</h2>
           <div class="quote">Bid <b id="bid">–</b> · Ask <b id="ask">–</b></div>
         </div>
-        <label class="field">Amount
-          <input type="number" id="market-qty" step="0.1" min="0" value="1" inputmode="decimal">
+        <label class="field">Lots
+          <input type="number" id="market-qty" step="0.01" min="0.01" value="0.10" inputmode="decimal">
         </label>
         <div class="row">
           <button type="button" id="market-buy" class="btn buy">Buy</button>
           <button type="button" id="market-sell" class="btn sell">Sell</button>
         </div>
+        <p class="hint">1 lot = 100 oz. The smallest order is 0.01 lot (1 oz).</p>
         <p id="order-msg" class="msg" role="status"></p>
       </section>
 
@@ -162,7 +163,7 @@
 
       <section class="history">
         <h2>Trade history</h2>
-        <div class="rows head"><div class="tr"><span>Time</span><span>Side</span><span>Price</span><span>Amount</span></div></div>
+        <div class="rows head"><div class="tr"><span>Time</span><span>Side</span><span>Price</span><span>Oz</span></div></div>
         <div id="trades" class="rows scroll"></div>
       </section>
     </aside>

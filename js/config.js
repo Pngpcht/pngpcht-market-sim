@@ -21,6 +21,11 @@
 
     tickSize: 0.01,     // 1 pip = $0.01. Every price is rounded to it.
     startBalance: 10000,
+
+    lotSize: 100,       // ounces in one standard lot, so a $1 move is $100 per lot
+    minLot: 0.01,       // smallest order: 0.01 lot = 1 oz
+    leverage: 1000,     // Forex mode: a position can be worth up to balance x leverage
+    stopOut: 0.5,       // margin call when equity falls below this share of the required margin
   };
 
   // The price the simulation starts at, and where it came from.

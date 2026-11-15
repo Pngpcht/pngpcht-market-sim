@@ -25,7 +25,7 @@
   let speed = 60;      // ticks (market seconds) per real second
   let paused = false;
   let timeframe = 60;  // candle size in seconds
-  let mode = 'stock';  // 'stock': sell only what you own. 'forex': you may sell first (short).
+  let mode = 'forex';  // 'forex': leverage, and you may sell first (short). 'stock': cash only, sell only what you own.
   let entry = 0;       // average price I got into my position at
   const isOpen = (qty) => Math.abs(qty) > Position.FLAT;
   let levels = { sl: null, tp: null }; // stop loss and take profit of my position
@@ -36,7 +36,14 @@
 
   const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
   const price = (p) => p.toFixed(2);
-  const amount = (q) => q.toFixed(4);
+  const amount = (q) => q.toFixed(2) + ' oz';
+
+  // An order size typed in lots, as ounces. NaN when it is not a valid size.
+  function ouncesFromLots(text) {
+    const lots = Math.round(parseFloat(text) * 100) / 100;
+    return lots >= Config.minLot ? lots * Config.lotSize : NaN;
+  }
+  const BAD_SIZE = 'Size must be at least ' + Config.minLot + ' lot';
 
   /* ---------------- my trades ---------------- */
 
@@ -123,8 +130,10 @@
     if (isOpen(qty)) {
       const hit = Position.levelHit(qty, levels.sl, levels.tp, low, high);
       if (hit) closePosition(hit === 'sl' ? 'Stop loss hit' : 'Take profit hit');
-      // A short that has eaten almost the whole account is closed before it can go below zero.
-      else if (qty < 0 && market.equity(ME) < -qty * market.lastPrice * 0.05) closePosition('Margin call, short closed');
+      // Margin call: the position is closed before its loss can take the account below zero.
+      else if (market.equity(ME) < (Config.stopOut * Math.abs(qty) * market.lastPrice) / market.account(ME).leverage) {
+        closePosition('Margin call, position closed');
+      }
     }
     low = high = market.lastPrice;
   }
@@ -132,7 +141,8 @@
   /* ---------------- placing orders ---------------- */
 
   function submitMarket(side) {
-    const qty = parseFloat($('market-qty').value);
+    const qty = ouncesFromLots($('market-qty').value);
+    if (Number.isNaN(qty)) return say(BAD_SIZE, true);
     const typed = levelsForOrder(side, market.lastPrice, qty);
     if (typed.error) return say(typed.error, true);
     const previous = levels;
@@ -148,7 +158,8 @@
 
   function submitLimit(side) {
     const limit = parseFloat($('limit-price').value);
-    const qty = parseFloat($('limit-qty').value);
+    const qty = ouncesFromLots($('limit-qty').value);
+    if (Number.isNaN(qty)) return say(BAD_SIZE, true);
     const typed = levelsForOrder(side, limit, qty);
     if (typed.error) return say(typed.error, true);
     const previous = levels;
@@ -196,18 +207,19 @@
   // Market: stock or forex
   const MODE_HINTS = {
     stock: 'Stock: you can only sell what you own.',
-    forex: 'Forex: you can sell first and buy back later.',
+    forex: 'Forex: 1:' + Config.leverage + ' leverage, and you can sell first and buy back later.',
   };
   function setMode(next) {
     const me = market.account(ME);
     const hint = $('mode-hint');
-    if (next === 'stock' && me.asset - me.reservedAsset < -Position.FLAT) {
-      hint.textContent = 'Close your short position and cancel its sell orders before going back to Stock.';
+    if (next === 'stock' && (me.asset - me.reservedAsset < -Position.FLAT || me.cash < 0 || me.open.size)) {
+      hint.textContent = 'Close your position and cancel your orders before going back to Stock.';
       hint.classList.add('error');
       return;
     }
     mode = next;
     me.canShort = mode === 'forex';
+    me.leverage = mode === 'forex' ? Config.leverage : 1;
     chart.title = Config.symbol + ' · ' + (mode === 'forex' ? 'Forex' : 'Stock');
     hint.textContent = MODE_HINTS[mode];
     hint.classList.remove('error');
@@ -267,9 +279,11 @@
 
   function renderBalance() {
     const me = market.account(ME);
-    setText('cash', usd.format(me.cash));
-    setText('holdings', amount(me.asset) + ' SIM');
-    setText('equity', 'Total ' + usd.format(me.cash + me.asset * market.lastPrice));
+    // Balance is what the account holds with the open position valued at its
+    // entry price. Equity adds the profit or loss that is still running.
+    setText('cash', usd.format(me.cash + me.asset * entry));
+    setText('holdings', amount(me.asset));
+    setText('equity', 'Equity ' + usd.format(market.equity(ME)));
     const bid = market.bestBid(), ask = market.bestAsk();
     setText('bid', bid === null ? '–' : price(bid));
     setText('ask', ask === null ? '–' : price(ask));

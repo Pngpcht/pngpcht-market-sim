@@ -106,6 +106,29 @@ test('an account that can short may sell without buying first', () => {
   assert.equal(m.account('fx').cash, 10000);
 });
 
+test('a leveraged account can hold a position worth its equity times the leverage', () => {
+  const m = setup();
+  m.addAccount('fx', { cash: 1000, asset: 0, canShort: true, leverage: 10 });
+  m.placeLimit('maker', 'sell', 100, 1);
+  m.placeMarket('me', 'buy', 1); // sets the last price to 100
+  m.placeLimit('maker', 'sell', 100, 500);
+
+  // 1,000 of equity at 10x buys up to 100 units at a price of 100.
+  assert.equal(m.placeMarket('fx', 'buy', 250).filled, 100);
+  assert.equal(m.account('fx').asset, 100);
+  assert.equal(m.account('fx').cash, -9000); // the rest is borrowed
+  assert.equal(m.equity('fx'), 1000);
+  assert.equal(m.placeLimit('fx', 'buy', 99, 1).ok, false);
+
+  // Selling closes the long and can go on into a short of the same size.
+  m.cancelAll('maker');
+  m.placeLimit('maker', 'buy', 100, 500);
+  assert.equal(m.sellable('fx'), 200);
+  assert.equal(m.placeMarket('fx', 'sell', 200).filled, 200);
+  assert.equal(m.account('fx').asset, -100);
+  assert.equal(m.placeMarket('fx', 'sell', 1).ok, false);
+});
+
 test('cancelling an order releases its reserved funds', () => {
   const m = setup();
   const r = m.placeLimit('me', 'buy', 90, 10);
